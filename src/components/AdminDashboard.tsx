@@ -1,80 +1,148 @@
 import { useEffect, useState } from "react";
 
-interface StudentSummary {
-  studentId: string;
-  alerts: number;
-  high: number;
-  medium: number;
-}
-
-interface Event {
+interface ProctorEvent {
   timestamp: number;
   type: string;
   severity: string;
+  confidence?: number;
 }
 
-export default function AdminDashboard() {
-  const [students, setStudents] = useState<StudentSummary[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [events, setEvents] = useState<Event[]>([]);
+export default function AdminDashboard({
+  onLogout,
+}: {
+  onLogout: () => void;
+}) {
+  const [students, setStudents] = useState<string[]>([]);
+  const [selectedStudent, setSelectedStudent] = useState<string | null>(null);
+  const [events, setEvents] = useState<ProctorEvent[]>([]);
 
+  // =========================
+  // AUTO‑REFRESH STUDENTS
+  // =========================
   useEffect(() => {
-    fetch("http://localhost:8000/admin/students")
-      .then(res => res.json())
-      .then(setStudents);
+    const loadStudents = () => {
+      fetch("http://localhost:8000/admin/students")
+        .then((res) => res.json())
+        .then((data) => {
+          if (Array.isArray(data)) {
+            setStudents(data);
+          } else {
+            setStudents(Object.keys(data));
+          }
+        })
+        .catch(() => {});
+    };
+
+    loadStudents(); // initial load
+    const interval = setInterval(loadStudents, 2000); // every 2s
+
+    return () => clearInterval(interval);
   }, []);
 
-  const loadEvents = (studentId: string) => {
-    setSelected(studentId);
-    fetch(`http://localhost:8000/admin/students/${studentId}/events`)
-      .then(res => res.json())
-      .then(setEvents);
-  };
+  // =========================
+  // AUTO‑REFRESH EVENTS
+  // =========================
+  useEffect(() => {
+    if (!selectedStudent) return;
+
+    const loadEvents = () => {
+      fetch(
+        `http://localhost:8000/admin/students/${selectedStudent}/events`
+      )
+        .then((res) => res.json())
+        .then(setEvents)
+        .catch(() => {});
+    };
+
+    loadEvents(); // initial load
+    const interval = setInterval(loadEvents, 2000); // every 2s
+
+    return () => clearInterval(interval);
+  }, [selectedStudent]);
 
   return (
     <div style={{ display: "flex", height: "100vh" }}>
-      {/* LEFT: STUDENTS */}
-      <div style={{ width: 350, borderRight: "1px solid #ccc", padding: 16 }}>
-        <h2>Active Students</h2>
-        {students.map(s => (
+      {/* =========================
+          LEFT PANEL — STUDENTS
+      ========================= */}
+      <div
+        style={{
+          width: 260,
+          borderRight: "1px solid #ddd",
+          padding: 12,
+          background: "#f8fafc",
+        }}
+      >
+        <h3>Active Students</h3>
+
+        {students.length === 0 && (
+          <p style={{ color: "#888" }}>No active students</p>
+        )}
+
+        {students.map((s) => (
           <div
-            key={s.studentId}
+            key={s}
+            onClick={() => setSelectedStudent(s)}
             style={{
-              padding: 12,
-              marginBottom: 8,
-              border: "1px solid #ddd",
-              cursor: "pointer"
+              padding: 8,
+              marginBottom: 6,
+              cursor: "pointer",
+              background:
+                selectedStudent === s ? "#e0f2fe" : "transparent",
+              borderRadius: 4,
             }}
-            onClick={() => loadEvents(s.studentId)}
           >
-            <strong>{s.studentId}</strong>
-            <div>Total Alerts: {s.alerts}</div>
-            <div>High: {s.high} | Medium: {s.medium}</div>
+            {s}
           </div>
         ))}
+
+        <button onClick={onLogout} style={{ marginTop: 20 }}>
+          Logout
+        </button>
       </div>
 
-      {/* RIGHT: EVENTS */}
+      {/* =========================
+          RIGHT PANEL — EVENTS
+      ========================= */}
       <div style={{ flex: 1, padding: 16 }}>
-        <h2>Proctoring Timeline</h2>
-        {!selected && <p>Select a student</p>}
+        <h3>Live Proctoring Timeline</h3>
 
-        {events.map((e, i) => (
-          <div
-            key={i}
-            style={{
-              padding: 10,
-              marginBottom: 6,
-              background: e.severity === "high" ? "#ffe5e5" : "#fff7cc",
-              borderLeft: `5px solid ${
-                e.severity === "high" ? "red" : "orange"
-              }`
-            }}
-          >
-            <strong>{e.type}</strong>
-            <div>{new Date(e.timestamp).toLocaleTimeString()}</div>
-          </div>
-        ))}
+        {!selectedStudent && <p>Select a student</p>}
+
+        {selectedStudent && events.length === 0 && (
+          <p>No events yet</p>
+        )}
+
+        {events
+          .slice()
+          .reverse()
+          .map((e, i) => (
+            <div
+              key={i}
+              style={{
+                padding: 10,
+                marginBottom: 8,
+                borderLeft: `4px solid ${
+                  e.severity === "high"
+                    ? "red"
+                    : e.severity === "medium"
+                    ? "orange"
+                    : "green"
+                }`,
+                background: "#ffffff",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+              }}
+            >
+              <strong>{e.type}</strong>
+              <div>
+                {new Date(e.timestamp).toLocaleTimeString()}
+              </div>
+              <div>Severity: {e.severity}</div>
+              {e.confidence !== undefined && (
+                <div>Confidence: {e.confidence.toFixed(2)}</div>
+              )}
+            </div>
+          ))}
       </div>
     </div>
   );

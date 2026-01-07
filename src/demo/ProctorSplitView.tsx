@@ -1,24 +1,38 @@
-import { useEffect } from "react";
-import { useAIMonitoring } from "../ai/hooks/useAIMonitoring";
+import { RefObject, useEffect } from "react";
+import { useExam } from "../context/ExamContext";
 
-export default function ProctorSplitView() {
-  const { start, containerRef, micActive } = useAIMonitoring("student_001");
+export default function ProctorSplitView({
+  containerRef,
+  micActive,
+  attachVideo,
+}: {
+  containerRef: RefObject<HTMLDivElement>;
+  micActive: boolean;
+  attachVideo: () => void;
+}) {
+  const { switchToCoding } = useExam();
 
+  // 🔥 THIS WAS MISSING
   useEffect(() => {
-    document.documentElement.requestFullscreen().catch(() => {});
-    start();
+    attachVideo();
   }, []);
 
   return (
     <div style={{ display: "flex", height: "100vh" }}>
+      {/* CAMERA */}
       <div
         ref={containerRef}
         style={{ flex: 1, background: "black" }}
       />
+
+      {/* INTERVIEW PANEL */}
       <div style={{ flex: 1, padding: 20 }}>
         <h2>AI Proctoring Active</h2>
         <p>🎤 Microphone: {micActive ? "ON" : "OFF"}</p>
-        <p>⚠ Alerts sent to admin</p>
+
+        <button onClick={switchToCoding} style={{ marginTop: 20 }}>
+          Finish Interview → Start Coding
+        </button>
       </div>
     </div>
   );

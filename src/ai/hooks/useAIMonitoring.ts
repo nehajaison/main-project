@@ -8,17 +8,21 @@ const Hands = (window as any).Hands;
 export function useAIMonitoring(studentId: string) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [micActive, setMicActive] = useState(false);
+  const streamRef = useRef<MediaStream | null>(null);
+  const yoloCooldownRef = useRef<number>(0);
 
-  // =========================
-  // CAMERA + MEDIAPIPE START
-  // =========================
+  const [micActive, setMicActive] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+
   async function start() {
+    if (streamRef.current) return; // prevent double start
+
     const stream = await navigator.mediaDevices.getUserMedia({
       video: true,
       audio: true,
     });
 
+    streamRef.current = stream;
     setMicActive(stream.getAudioTracks().length > 0);
 
     const video = document.createElement("video");
@@ -34,14 +38,9 @@ export function useAIMonitoring(studentId: string) {
     });
 
     videoRef.current = video;
+    setCameraReady(true);
 
-    if (containerRef.current) {
-      containerRef.current.innerHTML = "";
-      containerRef.current.appendChild(video);
-      video.style.width = "100%";
-      video.style.height = "100%";
-      video.style.objectFit = "cover";
-    }
+    attachVideo();
 
     const faceMesh = new FaceMesh({
       locateFile: (f: string) =>
@@ -88,9 +87,17 @@ export function useAIMonitoring(studentId: string) {
     cam.start();
   }
 
-  // =========================
-  // FULLSCREEN ENFORCEMENT
-  // =========================
+  function attachVideo() {
+    if (containerRef.current && videoRef.current) {
+      containerRef.current.innerHTML = "";
+      containerRef.current.appendChild(videoRef.current);
+      videoRef.current.style.width = "100%";
+      videoRef.current.style.height = "100%";
+      videoRef.current.style.objectFit = "cover";
+    }
+  }
+
+  // fullscreen
   useEffect(() => {
     const onFs = () => {
       if (!document.fullscreenElement) {
@@ -100,18 +107,14 @@ export function useAIMonitoring(studentId: string) {
           type: "fullscreen_exit",
           severity: "high",
         });
-        alert("Fullscreen required");
         document.documentElement.requestFullscreen().catch(() => {});
       }
     };
-
     document.addEventListener("fullscreenchange", onFs);
     return () => document.removeEventListener("fullscreenchange", onFs);
   }, []);
 
-  // =========================
-  // TAB SWITCH DETECTION
-  // =========================
+  // tab switch
   useEffect(() => {
     const onVis = () => {
       if (document.hidden) {
@@ -123,19 +126,17 @@ export function useAIMonitoring(studentId: string) {
         });
       }
     };
-
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
-  // =========================
-  // YOLO POLLING (FIXED)
-  // =========================
+  // YOLO polling
   useEffect(() => {
-    if (!videoRef.current) return;
+    if (!cameraReady || !videoRef.current) return;
 
     const interval = setInterval(async () => {
       if (!videoRef.current) return;
+      if (Date.now() - yoloCooldownRef.current < 8000) return;
 
       const canvas = document.createElement("canvas");
       canvas.width = videoRef.current.videoWidth;
@@ -146,22 +147,30 @@ export function useAIMonitoring(studentId: string) {
 
       ctx.drawImage(videoRef.current, 0, 0);
 
-      const frame = canvas
-        .toDataURL("image/jpeg")
-        .split(",")[1];
+      const frame = canvas.toDataURL("image/jpeg").split(",")[1];
 
-      await fetch("http://localhost:8000/detect_objects", {
+      const res = await fetch("http://localhost:8000/detect_objects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          studentId,
-          image: frame,
-        }),
+        body: JSON.stringify({ studentId, image: frame }),
       });
+
+      const data = await res.json();
+      if (data?.detections?.length) {
+        yoloCooldownRef.current = Date.now();
+      }
     }, 4000);
 
     return () => clearInterval(interval);
+  }, [cameraReady]);
+
+  // CLEANUP
+  useEffect(() => {
+    return () => {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    };
   }, []);
 
-  return { start, containerRef, micActive };
+  return { start, containerRef, micActive, attachVideo };
 }
