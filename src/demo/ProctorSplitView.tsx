@@ -12,7 +12,7 @@ export default function ProctorSplitView({
 }) {
   const { switchToCoding } = useExam();
 
-  // 🔥 THIS WAS MISSING
+
   useEffect(() => {
     attachVideo();
   }, []);
@@ -31,7 +31,7 @@ export default function ProctorSplitView({
         <p>🎤 Microphone: {micActive ? "ON" : "OFF"}</p>
 
         <button onClick={switchToCoding} style={{ marginTop: 20 }}>
-          Finish Interview → Start Coding
+          Start Coding
         </button>
       </div>
     </div>
